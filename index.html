@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead List Checker</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Lead List Checker</h1>
+            <p class="header-subtitle">Upload, analyze, and score your lead data with intelligent seniority &amp; job function matching</p>
+        </header>
+
+        <!-- File Upload Section -->
+        <div class="card upload-section">
+            <div class="card__body">
+                <div id="dropZone" class="drop-zone">
+                    <div class="drop-zone__content">
+                        <div class="drop-zone__icon">📄</div>
+                        <h3>Drop your CSV file here</h3>
+                        <p>or <button type="button" class="btn btn--primary" id="selectFileBtn">choose file</button></p>
+                        <input type="file" id="fileInput" accept=".csv" style="display: none;">
+                        <p class="drop-zone__help">Supports CSV files up to 10MB</p>
+                    </div>
+                    <div id="uploadStatus" class="upload-status" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seniority Selection -->
+        <div class="card seniority-section" id="senioritySection" style="display: none;">
+            <div class="card__body">
+                <h3>Target Seniority Levels</h3>
+                <p class="section-description">Select the seniority levels you want to target (affects scoring)</p>
+                <div class="seniority-checkboxes">
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="C-Level" class="seniority-checkbox">
+                        <span class="checkbox-custom"></span>
+                        C-Level
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="Vice President" class="seniority-checkbox">
+                        <span class="checkbox-custom"></span>
+                        Vice President
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="Director" class="seniority-checkbox">
+                        <span class="checkbox-custom"></span>
+                        Director
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="Head of" class="seniority-checkbox">
+                        <span class="checkbox-custom"></span>
+                        Head of
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="Manager" class="seniority-checkbox">
+                        <span class="checkbox-custom"></span>
+                        Manager
+                    </label>
+                </div>
+                <button class="btn btn--primary" id="analyzeBtn" disabled>Analyze Leads</button>
+            </div>
+        </div>
+
+        <!-- Analytics Dashboard -->
+        <div class="dashboard" id="dashboard" style="display: none;">
+            <div class="dashboard-header">
+                <h2>Analytics Dashboard</h2>
+                <div class="dashboard-stats">
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalLeads">0</span>
+                        <span class="stat-label">Total Leads</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="matchedLeads">0</span>
+                        <span class="stat-label">Matched Leads</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="avgScore">0</span>
+                        <span class="stat-label">Avg Score</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="charts-container">
+                <div class="chart-card">
+                    <div class="card">
+                        <div class="card__body">
+                            <h3>Leads by Seniority Level</h3>
+                            <div class="chart-container">
+                                <canvas id="seniorityChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="card">
+                        <div class="card__body">
+                            <h3>Leads by Job Function</h3>
+                            <div class="chart-container">
+                                <canvas id="jobFunctionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="card filters-section" id="filtersSection" style="display: none;">
+            <div class="card__body">
+                <div class="filters-header">
+                    <h3>Filters</h3>
+                    <button class="btn btn--outline btn--sm" id="clearFiltersBtn">Clear All</button>
+                </div>
+                
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label class="form-label">Filter by Seniority</label>
+                        <div class="filter-checkboxes" id="seniorityFilters">
+                            <!-- Dynamically populated -->
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="form-label">Filter by Job Function <span class="filter-count" id="jobFunctionCount">0 of 0 selected</span></label>
+                        <div class="multi-select-dropdown" id="jobFunctionDropdown">
+                            <div class="multi-select-input" id="jobFunctionInput">
+                                <input type="text" placeholder="Search job functions..." class="multi-select-search" id="jobFunctionSearch">
+                                <span class="multi-select-arrow">▼</span>
+                            </div>
+                            <div class="multi-select-options" id="jobFunctionOptions">
+                                <div class="multi-select-controls">
+                                    <button type="button" class="btn btn--sm btn--outline" id="selectAllJobFunctions">Select All</button>
+                                    <button type="button" class="btn btn--sm btn--outline" id="clearAllJobFunctions">Clear All</button>
+                                </div>
+                                <div class="multi-select-list" id="jobFunctionList">
+                                    <!-- Dynamically populated -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="form-label">Score Range</label>
+                        <div class="score-range">
+                            <input type="number" class="form-control" id="minScore" placeholder="Min" min="0" max="100">
+                            <span>to</span>
+                            <input type="number" class="form-control" id="maxScore" placeholder="Max" min="0" max="100">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="filter-summary" id="filterSummary">
+                    <span class="filter-summary-text">No filters applied</span>
+                    <div class="filter-badges" id="filterBadges"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card results-section" id="resultsSection" style="display: none;">
+            <div class="card__body">
+                <div class="results-header">
+                    <h3>Results</h3>
+                    <div class="results-actions">
+                        <span class="results-count" id="resultsCount">0 leads</span>
+                        <button class="btn btn--primary" id="exportBtn">
+                            📁 Export CSV
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table class="results-table" id="resultsTable">
+                        <thead>
+                            <!-- Dynamically populated -->
+                        </thead>
+                        <tbody>
+                            <!-- Dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="pagination" id="pagination" style="display: none;">
+                    <button class="btn btn--outline btn--sm" id="prevPage" disabled>Previous</button>
+                    <span class="pagination-info" id="paginationInfo">Page 1 of 1</span>
+                    <button class="btn btn--outline btn--sm" id="nextPage" disabled>Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
