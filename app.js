@@ -254,17 +254,23 @@ function analyzeLeads() {
         const detectedJobFunctions = detectJobFunctions(jobTitle);
         const score = calculateScore(detectedSeniority, detectedJobFunctions);
 
-        return {
+        const result = {
             ...lead, // Preserve all original data
             Detected_Seniority: detectedSeniority,
             Detected_Job_Function_1: detectedJobFunctions[0].category,
             Job_Function_1_Score: detectedJobFunctions[0].score,
-            Detected_Job_Function_2: detectedJobFunctions[1].category,
-            Job_Function_2_Score: detectedJobFunctions[1].score,
             Total_Score: score,
             _originalIndex: index,
             _jobFunctions: detectedJobFunctions // Store for internal use
         };
+
+        // Only add second job function if it exists
+        if (detectedJobFunctions.length > 1) {
+            result.Detected_Job_Function_2 = detectedJobFunctions[1].category;
+            result.Job_Function_2_Score = detectedJobFunctions[1].score;
+        }
+
+        return result;
     });
 
     appState.filteredData = [...appState.processedData];
@@ -361,10 +367,7 @@ function matchesExactly(fullTitle, tokens, keyword) {
 }
 
 function detectJobFunctions(jobTitle) {
-    if (!jobTitle) return [
-        { category: 'Other/Unmatched', score: 0 },
-        { category: 'Other/Unmatched', score: 0 }
-    ];
+    if (!jobTitle) return [{ category: 'Other/Unmatched', score: 0 }];
 
     const title = jobTitle.toLowerCase().trim();
     let allMatches = [];
@@ -398,12 +401,9 @@ function detectJobFunctions(jobTitle) {
         }
     }
 
-    // If no matches found, return two "Other/Unmatched" entries
+    // If no matches found, return single "Other/Unmatched" entry
     if (allMatches.length === 0) {
-        return [
-            { category: 'Other/Unmatched', score: 0 },
-            { category: 'Other/Unmatched', score: 0 }
-        ];
+        return [{ category: 'Other/Unmatched', score: 0 }];
     }
 
     // Sort by score (descending) and then by keyword length (descending)
@@ -426,12 +426,8 @@ function detectJobFunctions(jobTitle) {
         if (uniqueMatches.length >= 2) break;
     }
 
-    // If we only found one match, add "Other/Unmatched" as the second
-    if (uniqueMatches.length === 1) {
-        uniqueMatches.push({ category: 'Other/Unmatched', score: 0 });
-    }
-
-    return uniqueMatches.slice(0, 2);
+    // Return 1 or 2 matches based on what was found
+    return uniqueMatches;
 }
 
 // Helper function to escape regex special characters
@@ -470,8 +466,8 @@ function calculateScore(seniority, jobFunctionsArray) {
         totalScore += 25;
     }
 
-    // Job function score: use the maximum score from the two job functions
-    const maxJobFunctionScore = Math.max(jobFunctionsArray[0].score, jobFunctionsArray[1].score);
+    // Job function score: use the maximum score from all detected job functions
+    const maxJobFunctionScore = Math.max(...jobFunctionsArray.map(jf => jf.score));
     totalScore += maxJobFunctionScore;
 
     return totalScore;
@@ -554,13 +550,14 @@ function updateJobFunctionChart() {
 
     appState.filteredData.forEach(lead => {
         const jobFunction1 = lead.Detected_Job_Function_1 || 'Other/Unmatched';
-        const jobFunction2 = lead.Detected_Job_Function_2 || 'Other/Unmatched';
-
         jobFunctionCount[jobFunction1] = (jobFunctionCount[jobFunction1] || 0) + 1;
 
-        // Only count function 2 if it's different from function 1
-        if (jobFunction2 !== jobFunction1) {
-            jobFunctionCount[jobFunction2] = (jobFunctionCount[jobFunction2] || 0) + 1;
+        // Only count function 2 if it exists and is different from function 1
+        if (lead.Detected_Job_Function_2) {
+            const jobFunction2 = lead.Detected_Job_Function_2;
+            if (jobFunction2 !== jobFunction1) {
+                jobFunctionCount[jobFunction2] = (jobFunctionCount[jobFunction2] || 0) + 1;
+            }
         }
     });
 
