@@ -251,16 +251,19 @@ function analyzeLeads() {
     appState.processedData = appState.originalData.map((lead, index) => {
         const jobTitle = lead[jobTitleColumn] || '';
         const detectedSeniority = detectSeniority(jobTitle);
-        const detectedJobFunction = detectJobFunction(jobTitle);
-        const score = calculateScore(detectedSeniority, detectedJobFunction);
+        const detectedJobFunctions = detectJobFunctions(jobTitle);
+        const score = calculateScore(detectedSeniority, detectedJobFunctions);
 
         return {
             ...lead, // Preserve all original data
             Detected_Seniority: detectedSeniority,
-            Detected_Job_Function: detectedJobFunction.category,
-            Job_Function_Score: detectedJobFunction.score,
+            Detected_Job_Function_1: detectedJobFunctions[0].category,
+            Job_Function_1_Score: detectedJobFunctions[0].score,
+            Detected_Job_Function_2: detectedJobFunctions[1].category,
+            Job_Function_2_Score: detectedJobFunctions[1].score,
             Total_Score: score,
-            _originalIndex: index
+            _originalIndex: index,
+            _jobFunctions: detectedJobFunctions // Store for internal use
         };
     });
 
@@ -357,42 +360,78 @@ function matchesExactly(fullTitle, tokens, keyword) {
     }
 }
 
-function detectJobFunction(jobTitle) {
-    if (!jobTitle) return { category: 'Other/Unmatched', score: 0 };
-    
+function detectJobFunctions(jobTitle) {
+    if (!jobTitle) return [
+        { category: 'Other/Unmatched', score: 0 },
+        { category: 'Other/Unmatched', score: 0 }
+    ];
+
     const title = jobTitle.toLowerCase().trim();
-    let bestMatch = { category: 'Other/Unmatched', score: 0, keywordLength: 0, matchType: 'none' };
-    
+    let allMatches = [];
+
     // Keywords are already sorted by length (longest first) in the data structure
     for (const [category, keywords] of Object.entries(JOB_FUNCTION_KEYWORDS)) {
         for (const keyword of keywords) {
             const lowerKeyword = keyword.toLowerCase().trim();
-            
+
             // Check for exact phrase match first
             if (title === lowerKeyword) {
-                return { category, score: 75, keywordLength: lowerKeyword.length, matchType: 'exact' };
+                allMatches.push({
+                    category,
+                    score: 75,
+                    keywordLength: lowerKeyword.length,
+                    matchType: 'exact'
+                });
+                continue;
             }
-            
+
             // Check for word boundary matches ONLY - no substring matching
             if (hasWordBoundary(title, lowerKeyword)) {
                 const score = 75; // Full word boundary match
-                if (score > bestMatch.score || (score === bestMatch.score && lowerKeyword.length > bestMatch.keywordLength)) {
-                    bestMatch = {
-                        category,
-                        score,
-                        keywordLength: lowerKeyword.length,
-                        matchType: 'word-boundary'
-                    };
-                    // Continue to find longest match at same score level
-                }
+                allMatches.push({
+                    category,
+                    score,
+                    keywordLength: lowerKeyword.length,
+                    matchType: 'word-boundary'
+                });
             }
         }
-        
-        // If we found a perfect match, no need to check other categories
-        if (bestMatch.score === 75 && bestMatch.matchType === 'exact') break;
     }
-    
-    return bestMatch;
+
+    // If no matches found, return two "Other/Unmatched" entries
+    if (allMatches.length === 0) {
+        return [
+            { category: 'Other/Unmatched', score: 0 },
+            { category: 'Other/Unmatched', score: 0 }
+        ];
+    }
+
+    // Sort by score (descending) and then by keyword length (descending)
+    allMatches.sort((a, b) => {
+        if (b.score !== a.score) {
+            return b.score - a.score;
+        }
+        return b.keywordLength - a.keywordLength;
+    });
+
+    // Remove duplicate categories - keep only the best match for each category
+    const uniqueMatches = [];
+    const seenCategories = new Set();
+
+    for (const match of allMatches) {
+        if (!seenCategories.has(match.category)) {
+            uniqueMatches.push(match);
+            seenCategories.add(match.category);
+        }
+        if (uniqueMatches.length >= 2) break;
+    }
+
+    // If we only found one match, add "Other/Unmatched" as the second
+    if (uniqueMatches.length === 1) {
+        uniqueMatches.push({ category: 'Other/Unmatched', score: 0 });
+    }
+
+    return uniqueMatches.slice(0, 2);
 }
 
 // Helper function to escape regex special characters
@@ -423,17 +462,18 @@ function matchesPhrase(text, phrase) {
     return regex.test(text);
 }
 
-function calculateScore(seniority, jobFunctionResult) {
+function calculateScore(seniority, jobFunctionsArray) {
     let totalScore = 0;
-    
+
     // Seniority score: 25 points if matches target seniority levels
     if (appState.targetSeniorityLevels.includes(seniority)) {
         totalScore += 25;
     }
-    
-    // Job function score: from detection result
-    totalScore += jobFunctionResult.score;
-    
+
+    // Job function score: use the maximum score from the two job functions
+    const maxJobFunctionScore = Math.max(jobFunctionsArray[0].score, jobFunctionsArray[1].score);
+    totalScore += maxJobFunctionScore;
+
     return totalScore;
 }
 
@@ -508,20 +548,27 @@ function updateSeniorityChart() {
 
 function updateJobFunctionChart() {
     const ctx = document.getElementById('jobFunctionChart').getContext('2d');
-    
-    // Count leads by job function
+
+    // Count leads by job function - count both function 1 and function 2
     const jobFunctionCount = {};
-    
+
     appState.filteredData.forEach(lead => {
-        const jobFunction = lead.Detected_Job_Function || 'Other/Unmatched';
-        jobFunctionCount[jobFunction] = (jobFunctionCount[jobFunction] || 0) + 1;
+        const jobFunction1 = lead.Detected_Job_Function_1 || 'Other/Unmatched';
+        const jobFunction2 = lead.Detected_Job_Function_2 || 'Other/Unmatched';
+
+        jobFunctionCount[jobFunction1] = (jobFunctionCount[jobFunction1] || 0) + 1;
+
+        // Only count function 2 if it's different from function 1
+        if (jobFunction2 !== jobFunction1) {
+            jobFunctionCount[jobFunction2] = (jobFunctionCount[jobFunction2] || 0) + 1;
+        }
     });
-    
+
     // Sort by count and take top 10
     const sortedJobFunctions = Object.entries(jobFunctionCount)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 10);
-    
+
     const labels = sortedJobFunctions.map(([label]) => label);
     const data = sortedJobFunctions.map(([,count]) => count);
     const colors = labels.map((_, index) => CHART_COLORS[index % CHART_COLORS.length]);
@@ -601,7 +648,17 @@ function setupSeniorityFilters() {
 }
 
 function setupJobFunctionFilters() {
-    const jobFunctions = [...new Set(appState.processedData.map(lead => lead.Detected_Job_Function))].sort();
+    // Collect all unique job functions from both function 1 and function 2
+    const allJobFunctions = new Set();
+    appState.processedData.forEach(lead => {
+        if (lead.Detected_Job_Function_1) {
+            allJobFunctions.add(lead.Detected_Job_Function_1);
+        }
+        if (lead.Detected_Job_Function_2) {
+            allJobFunctions.add(lead.Detected_Job_Function_2);
+        }
+    });
+    const jobFunctions = [...allJobFunctions].sort();
     populateJobFunctionDropdown(jobFunctions);
 }
 
@@ -753,12 +810,15 @@ function applyFilters() {
         filtered = filtered.filter(lead => checkedSeniorities.includes(lead.Detected_Seniority));
     }
     
-    // Job function filter
+    // Job function filter - match if ANY of the lead's job functions match the selected filters
     const selectedJobFunctions = Array.from(document.querySelectorAll('#jobFunctionList input[type="checkbox"]:checked'))
         .map(cb => cb.value);
-    
+
     if (selectedJobFunctions.length > 0) {
-        filtered = filtered.filter(lead => selectedJobFunctions.includes(lead.Detected_Job_Function));
+        filtered = filtered.filter(lead =>
+            selectedJobFunctions.includes(lead.Detected_Job_Function_1) ||
+            selectedJobFunctions.includes(lead.Detected_Job_Function_2)
+        );
     }
     
     // Score range filter
@@ -907,7 +967,7 @@ function displayResults() {
             const cell = document.createElement('td');
             let value = lead[key];
             
-            if (key === 'Total_Score' || key === 'Job_Function_Score') {
+            if (key === 'Total_Score' || key === 'Job_Function_1_Score' || key === 'Job_Function_2_Score') {
                 cell.className = 'score-cell';
                 if (value >= 70) cell.classList.add('score-high');
                 else if (value >= 40) cell.classList.add('score-medium');
@@ -953,12 +1013,12 @@ function changePage(direction) {
 }
 
 function sortTable(column) {
-    const isNumeric = ['Total_Score', 'Job_Function_Score'].includes(column);
-    
+    const isNumeric = ['Total_Score', 'Job_Function_1_Score', 'Job_Function_2_Score'].includes(column);
+
     appState.filteredData.sort((a, b) => {
         let aVal = a[column] || '';
         let bVal = b[column] || '';
-        
+
         if (isNumeric) {
             aVal = parseFloat(aVal) || 0;
             bVal = parseFloat(bVal) || 0;
@@ -969,7 +1029,7 @@ function sortTable(column) {
             return aVal.localeCompare(bVal); // Ascending for text
         }
     });
-    
+
     appState.currentPage = 1;
     displayResults();
 }
