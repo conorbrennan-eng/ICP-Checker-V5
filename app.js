@@ -254,23 +254,19 @@ function analyzeLeads() {
         const detectedJobFunctions = detectJobFunctions(jobTitle);
         const score = calculateScore(detectedSeniority, detectedJobFunctions);
 
-        const result = {
+        // Combine job functions into a single comma-separated string
+        const jobFunctionCategories = detectedJobFunctions.map(jf => jf.category).join(', ');
+        const maxJobFunctionScore = Math.max(...detectedJobFunctions.map(jf => jf.score));
+
+        return {
             ...lead, // Preserve all original data
             Detected_Seniority: detectedSeniority,
-            Detected_Job_Function_1: detectedJobFunctions[0].category,
-            Job_Function_1_Score: detectedJobFunctions[0].score,
+            Detected_Job_Function: jobFunctionCategories,
+            Job_Function_Score: maxJobFunctionScore,
             Total_Score: score,
             _originalIndex: index,
             _jobFunctions: detectedJobFunctions // Store for internal use
         };
-
-        // Only add second job function if it exists
-        if (detectedJobFunctions.length > 1) {
-            result.Detected_Job_Function_2 = detectedJobFunctions[1].category;
-            result.Job_Function_2_Score = detectedJobFunctions[1].score;
-        }
-
-        return result;
     });
 
     appState.filteredData = [...appState.processedData];
@@ -545,19 +541,16 @@ function updateSeniorityChart() {
 function updateJobFunctionChart() {
     const ctx = document.getElementById('jobFunctionChart').getContext('2d');
 
-    // Count leads by job function - count both function 1 and function 2
+    // Count leads by job function - split comma-separated values and count each
     const jobFunctionCount = {};
 
     appState.filteredData.forEach(lead => {
-        const jobFunction1 = lead.Detected_Job_Function_1 || 'Other/Unmatched';
-        jobFunctionCount[jobFunction1] = (jobFunctionCount[jobFunction1] || 0) + 1;
-
-        // Only count function 2 if it exists and is different from function 1
-        if (lead.Detected_Job_Function_2) {
-            const jobFunction2 = lead.Detected_Job_Function_2;
-            if (jobFunction2 !== jobFunction1) {
-                jobFunctionCount[jobFunction2] = (jobFunctionCount[jobFunction2] || 0) + 1;
-            }
+        if (lead.Detected_Job_Function) {
+            // Split by comma and trim whitespace
+            const functions = lead.Detected_Job_Function.split(',').map(f => f.trim());
+            functions.forEach(func => {
+                jobFunctionCount[func] = (jobFunctionCount[func] || 0) + 1;
+            });
         }
     });
 
@@ -645,14 +638,13 @@ function setupSeniorityFilters() {
 }
 
 function setupJobFunctionFilters() {
-    // Collect all unique job functions from both function 1 and function 2
+    // Collect all unique job functions from comma-separated values
     const allJobFunctions = new Set();
     appState.processedData.forEach(lead => {
-        if (lead.Detected_Job_Function_1) {
-            allJobFunctions.add(lead.Detected_Job_Function_1);
-        }
-        if (lead.Detected_Job_Function_2) {
-            allJobFunctions.add(lead.Detected_Job_Function_2);
+        if (lead.Detected_Job_Function) {
+            // Split by comma and trim whitespace
+            const functions = lead.Detected_Job_Function.split(',').map(f => f.trim());
+            functions.forEach(func => allJobFunctions.add(func));
         }
     });
     const jobFunctions = [...allJobFunctions].sort();
@@ -807,15 +799,18 @@ function applyFilters() {
         filtered = filtered.filter(lead => checkedSeniorities.includes(lead.Detected_Seniority));
     }
     
-    // Job function filter - match if ANY of the lead's job functions match the selected filters
+    // Job function filter - match if ANY of the lead's comma-separated job functions match the selected filters
     const selectedJobFunctions = Array.from(document.querySelectorAll('#jobFunctionList input[type="checkbox"]:checked'))
         .map(cb => cb.value);
 
     if (selectedJobFunctions.length > 0) {
-        filtered = filtered.filter(lead =>
-            selectedJobFunctions.includes(lead.Detected_Job_Function_1) ||
-            selectedJobFunctions.includes(lead.Detected_Job_Function_2)
-        );
+        filtered = filtered.filter(lead => {
+            if (!lead.Detected_Job_Function) return false;
+            // Split comma-separated job functions
+            const leadJobFunctions = lead.Detected_Job_Function.split(',').map(f => f.trim());
+            // Check if any of the lead's job functions match the selected filters
+            return leadJobFunctions.some(func => selectedJobFunctions.includes(func));
+        });
     }
     
     // Score range filter
@@ -964,7 +959,7 @@ function displayResults() {
             const cell = document.createElement('td');
             let value = lead[key];
             
-            if (key === 'Total_Score' || key === 'Job_Function_1_Score' || key === 'Job_Function_2_Score') {
+            if (key === 'Total_Score' || key === 'Job_Function_Score') {
                 cell.className = 'score-cell';
                 if (value >= 70) cell.classList.add('score-high');
                 else if (value >= 40) cell.classList.add('score-medium');
@@ -1010,7 +1005,7 @@ function changePage(direction) {
 }
 
 function sortTable(column) {
-    const isNumeric = ['Total_Score', 'Job_Function_1_Score', 'Job_Function_2_Score'].includes(column);
+    const isNumeric = ['Total_Score', 'Job_Function_Score'].includes(column);
 
     appState.filteredData.sort((a, b) => {
         let aVal = a[column] || '';
